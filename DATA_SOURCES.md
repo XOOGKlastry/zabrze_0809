@@ -8,6 +8,6 @@ Stan weryfikacji usług: 7 września 2026 r.
 | Mapa ulic | OpenStreetMap | kafelki XYZ | EPSG:3857 |
 | Ortofotomapa standardowa | GUGiK / Geoportal, WMS `https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution`, warstwa `Raster` | podkład WMS pobierany na żądanie | EPSG:3857 |
 | Działki ewidencyjne | GUGiK, ULDK `https://uldk.gugik.gov.pl/`, operacja `GetParcelByXY` | zapytanie po kliknięciu; atrybuty i geometria WKT | wejście i wynik EPSG:4326 |
+| Granice i numery działek | GUGiK, KIEG `https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow`, warstwy `dzialki,numery_dzialek` | przezroczysta warstwa WMS włączana automatycznie od poziomu zbliżenia 16 | EPSG:3857 |
 
 Punkt przy ul. Macieja Rataja ma charakter orientacyjny i wskazuje boisko treningowe. Dane działek są pobierane na żywo; ich dostępność zależy od działania usług źródłowych GUGiK i właściwego powiatu.
-

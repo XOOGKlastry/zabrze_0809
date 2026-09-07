@@ -35,6 +35,10 @@ export default function Home() {
     L.control.zoom({position:'topright'}).addTo(map);
     const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
     const ortho=L.tileLayer.wms('https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution',{layers:'Raster',format:'image/jpeg',version:'1.3.0',transparent:false,maxZoom:21,attribution:'Ortofotomapa &copy; GUGiK / Geoportal'});
+    map.createPane('cadastre');map.getPane('cadastre').style.zIndex='420';map.getPane('cadastre').style.pointerEvents='none';
+    const cadastre=L.tileLayer.wms('https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow',{layers:'dzialki,numery_dzialek',format:'image/png',version:'1.1.1',transparent:true,maxZoom:21,pane:'cadastre',attribution:'Ewidencja gruntów &copy; GUGiK / KIEG'});
+    const updateCadastre=()=>{if(map.getZoom()>=16){if(!map.hasLayer(cadastre))cadastre.addTo(map)}else if(map.hasLayer(cadastre))map.removeLayer(cadastre)};
+    map.on('zoomend',updateCadastre);
     osmRef.current=osm; orthoRef.current=ortho;
     const bounds:[number,number][]=[];
     sites.forEach(site=>{
@@ -57,6 +61,7 @@ export default function Home() {
       }catch{setParcelStatus('Nie udało się ustalić działki w tym miejscu')}
     });
     map.fitBounds(bounds,{paddingTopLeft:[22,100],paddingBottomRight:[22,125],maxZoom:14});
+    updateCadastre();
     return()=>{map.remove();mapRef.current=null;markerRef.current={}};
   },[ready]);
 
