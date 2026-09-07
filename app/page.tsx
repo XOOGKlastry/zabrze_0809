@@ -2,7 +2,7 @@
 
 import Script from 'next/script';
 import { useEffect, useRef, useState } from 'react';
-import { Layers, LocateFixed, MapPinned, Navigation, PanelBottomOpen, X } from 'lucide-react';
+import { Eye, Layers, LocateFixed, MapPinned, Navigation, PanelBottomOpen, X } from 'lucide-react';
 
 type Site = { id:string; title:string; address:string; parcel:string; placement:string; power:string; lat:number; lng:number; images:string[] };
 type Parcel = { id:string; number:string; region:string; commune:string; source:string };
@@ -24,10 +24,10 @@ declare global { interface Window { L:any } }
 
 export default function Home() {
   const mapRef=useRef<any>(null); const markerRef=useRef<Record<string,any>>({});
-  const osmRef=useRef<any>(null); const orthoRef=useRef<any>(null); const parcelLayerRef=useRef<any>(null);
+  const osmRef=useRef<any>(null); const orthoRef=useRef<any>(null); const esriRef=useRef<any>(null); const parcelLayerRef=useRef<any>(null);
   const [ready,setReady]=useState(false); const [selected,setSelected]=useState<Site|null>(null);
   const [listOpen,setListOpen]=useState(false); const [locationStatus,setLocationStatus]=useState('');
-  const [baseMap,setBaseMap]=useState<'map'|'ortho'>('map'); const [parcel,setParcel]=useState<Parcel|null>(null); const [parcelStatus,setParcelStatus]=useState('');
+  const [baseMap,setBaseMap]=useState<'map'|'ortho'|'esri'>('map'); const [parcel,setParcel]=useState<Parcel|null>(null); const [parcelStatus,setParcelStatus]=useState('');
 
   useEffect(()=>{
     if(!ready||!window.L||mapRef.current)return;
@@ -35,11 +35,12 @@ export default function Home() {
     L.control.zoom({position:'topright'}).addTo(map);
     const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
     const ortho=L.tileLayer.wms('https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution',{layers:'Raster',format:'image/jpeg',version:'1.3.0',transparent:false,maxZoom:21,attribution:'Ortofotomapa &copy; GUGiK / Geoportal'});
+    const esri=L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:20,attribution:'Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community'});
     map.createPane('cadastre');map.getPane('cadastre').style.zIndex='420';map.getPane('cadastre').style.pointerEvents='none';
     const cadastre=L.tileLayer.wms('https://integracja.gugik.gov.pl/cgi-bin/KrajowaIntegracjaEwidencjiGruntow',{layers:'dzialki,numery_dzialek',format:'image/png',version:'1.1.1',transparent:true,maxZoom:21,pane:'cadastre',attribution:'Ewidencja gruntów &copy; GUGiK / KIEG'});
     const updateCadastre=()=>{if(map.getZoom()>=16){if(!map.hasLayer(cadastre))cadastre.addTo(map)}else if(map.hasLayer(cadastre))map.removeLayer(cadastre)};
     map.on('zoomend',updateCadastre);
-    osmRef.current=osm; orthoRef.current=ortho;
+    osmRef.current=osm; orthoRef.current=ortho; esriRef.current=esri;
     const bounds:[number,number][]=[];
     sites.forEach(site=>{
       const icon=L.divIcon({className:'pv-marker-wrap',html:`<span class="pv-marker"><b>${site.id.toUpperCase()}</b></span>`,iconSize:[38,46],iconAnchor:[19,43],popupAnchor:[0,-39]});
@@ -69,7 +70,9 @@ export default function Home() {
   const showAll=()=>{mapRef.current?.fitBounds(sites.map(s=>[s.lat,s.lng]),{paddingTopLeft:[22,100],paddingBottomRight:[22,125],maxZoom:14});setSelected(null)};
   const toggleBaseMap=()=>{
     const map=mapRef.current;if(!map)return;
-    if(baseMap==='map'){map.removeLayer(osmRef.current);orthoRef.current.addTo(map);setBaseMap('ortho')}else{map.removeLayer(orthoRef.current);osmRef.current.addTo(map);setBaseMap('map')}
+    const layers={map:osmRef.current,ortho:orthoRef.current,esri:esriRef.current};
+    const next=baseMap==='map'?'ortho':baseMap==='ortho'?'esri':'map';
+    map.removeLayer(layers[baseMap]);layers[next].addTo(map);setBaseMap(next);
   };
   const locate=()=>{
     if(!navigator.geolocation){setLocationStatus('Lokalizacja jest niedostępna');return} setLocationStatus('Szukam…');
@@ -81,11 +84,11 @@ export default function Home() {
     <Script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossOrigin="" strategy="afterInteractive" onLoad={()=>setReady(true)} />
     <header className="topbar"><div className="brand-mark" aria-hidden="true"><span /></div><div><p className="eyebrow">Zabrze · 10 punktów</p><h1>Planowane instalacje PV</h1></div><button className="icon-button" onClick={()=>setListOpen(true)} aria-label="Otwórz listę obiektów"><PanelBottomOpen size={22}/></button></header>
     <section id="map" aria-label="Mapa lokalizacji planowanych instalacji fotowoltaicznych" />
-    <div className="map-actions"><button onClick={showAll}><MapPinned size={18}/>Wszystkie</button><button onClick={toggleBaseMap} aria-pressed={baseMap==='ortho'}><Layers size={18}/>{baseMap==='ortho'?'Mapa':'Ortofoto'}</button><button className="locate-action" onClick={locate}><LocateFixed size={18}/><span>Moja pozycja</span></button></div>
+    <div className="map-actions"><button onClick={showAll}><MapPinned size={18}/>Wszystkie</button><button onClick={toggleBaseMap} aria-label={`Zmień podkład mapowy. Obecnie: ${baseMap==='map'?'mapa ulic':baseMap==='ortho'?'ortofotomapa GUGiK':'zdjęcia Esri'}`}><Layers size={18}/>{baseMap==='map'?'Ortofoto':baseMap==='ortho'?'Esri':'Mapa'}</button><button className="locate-action" onClick={locate}><LocateFixed size={18}/><span>Moja pozycja</span></button></div>
     {(locationStatus||parcelStatus)&&<div className="status" role="status">{locationStatus||parcelStatus}</div>}
     {!selected&&!parcel&&!listOpen&&!parcelStatus&&<button className="hint-card" onClick={()=>setListOpen(true)}><span className="hint-icon"><MapPinned size={21}/></span><span><strong>Dotknij mapy, aby sprawdzić działkę</strong><small>Albo wybierz jeden z 10 punktów inwestycji</small></span><span className="count">10</span></button>}
-    {selected&&<article className="detail-card" aria-live="polite"><button className="close" onClick={()=>setSelected(null)} aria-label="Zamknij szczegóły"><X size={20}/></button><div className="detail-heading"><span className="letter">{selected.id}</span><div><p>{selected.address}</p><h2>{selected.title}</h2></div></div><div className={`photo-strip photos-${selected.images.length}`}>{selected.images.map((name,index)=><a key={name} href={`/obiekty/${name}`} target="_blank" rel="noreferrer" aria-label={`Otwórz zdjęcie ${index+1} obiektu ${selected.id.toUpperCase()}`}><img src={`/obiekty/${name}`} alt={`Widok 3D obiektu ${selected.id.toUpperCase()}, ujęcie ${index+1}`} loading="lazy"/></a>)}</div><div className="facts"><div><span>Zakres</span><strong>{selected.placement}</strong></div><div><span>Moc</span><strong>{selected.power}</strong></div><div><span>Działka</span><strong>{selected.parcel}</strong></div></div><a className="directions" href={`https://www.google.com/maps/dir/?api=1&destination=${selected.lat},${selected.lng}`} target="_blank" rel="noreferrer"><Navigation size={18}/>Wyznacz trasę</a></article>}
+    {selected&&<article className="detail-card" aria-live="polite"><button className="close" onClick={()=>setSelected(null)} aria-label="Zamknij szczegóły"><X size={20}/></button><div className="detail-heading"><span className="letter">{selected.id}</span><div><p>{selected.address}</p><h2>{selected.title}</h2></div></div><div className={`photo-strip photos-${selected.images.length}`}>{selected.images.map((name,index)=><a key={name} href={`/obiekty/${name}`} target="_blank" rel="noreferrer" aria-label={`Otwórz zdjęcie ${index+1} obiektu ${selected.id.toUpperCase()}`}><img src={`/obiekty/${name}`} alt={`Widok 3D obiektu ${selected.id.toUpperCase()}, ujęcie ${index+1}`} loading="lazy"/></a>)}</div><div className="facts"><div><span>Zakres</span><strong>{selected.placement}</strong></div><div><span>Moc</span><strong>{selected.power}</strong></div><div><span>Działka</span><strong>{selected.parcel}</strong></div></div><div className="detail-actions"><a className="directions" href={`https://www.google.com/maps/dir/?api=1&destination=${selected.lat},${selected.lng}`} target="_blank" rel="noreferrer"><Navigation size={18}/>Trasa</a><a className="streetview" href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${selected.lat},${selected.lng}`} target="_blank" rel="noreferrer"><Eye size={18}/>Street View</a></div></article>}
     {parcel&&<article className="parcel-card" aria-live="polite"><button className="close" onClick={()=>{setParcel(null);if(parcelLayerRef.current)mapRef.current?.removeLayer(parcelLayerRef.current)}} aria-label="Zamknij informację o działce"><X size={20}/></button><p className="eyebrow">Działka wskazana na mapie</p><h2>{parcel.number}</h2><dl><div><dt>Identyfikator</dt><dd>{parcel.id}</dd></div><div><dt>Obręb</dt><dd>{parcel.region}</dd></div><div><dt>Gmina</dt><dd>{parcel.commune}</dd></div></dl><p className="parcel-source">Źródło: ULDK GUGiK · {parcel.source}</p></article>}
-    {listOpen&&<section className="sheet" aria-label="Lista obiektów"><div className="sheet-head"><div><p className="eyebrow">11 instalacji · 10 pozycji</p><h2>Obiekty</h2></div><button className="icon-button" onClick={()=>setListOpen(false)} aria-label="Zamknij listę"><X size={22}/></button></div><div className="site-list">{sites.map(site=><button key={site.id} onClick={()=>focusSite(site)}><span className="letter">{site.id}</span><span><strong>{site.title}</strong><small>{site.address}</small><em>{site.power}</em></span></button>)}</div><p className="source-note">Mapa ulic: OpenStreetMap. Ortofotomapa i działki: GUGiK / Geoportal (ULDK). Punkt przy ul. Rataja ma charakter orientacyjny — wskazuje boisko treningowe.</p></section>}
+    {listOpen&&<section className="sheet" aria-label="Lista obiektów"><div className="sheet-head"><div><p className="eyebrow">11 instalacji · 10 pozycji</p><h2>Obiekty</h2></div><button className="icon-button" onClick={()=>setListOpen(false)} aria-label="Zamknij listę"><X size={22}/></button></div><div className="site-list">{sites.map(site=><button key={site.id} onClick={()=>focusSite(site)}><span className="letter">{site.id}</span><span><strong>{site.title}</strong><small>{site.address}</small><em>{site.power}</em></span></button>)}</div><p className="source-note">Podkłady: OpenStreetMap, ortofotomapa GUGiK i zdjęcia Esri. Działki: GUGiK / Geoportal (ULDK). Punkt przy ul. Rataja ma charakter orientacyjny — wskazuje boisko treningowe.</p></section>}
   </main>;
 }
