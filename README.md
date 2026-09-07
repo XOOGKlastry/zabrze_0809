@@ -10,7 +10,9 @@ Mobilna mapa Leaflet prezentująca lokalizacje planowanych instalacji PV, ich mo
 - geolokalizacja użytkownika i wyznaczanie trasy,
 - układ dopasowany do telefonu.
 
-Wersja działająca: https://instalacje-pv-zabrze.ofek485388.chatgpt.site
+Wersja działająca z GitHub Pages: https://xoogklastry.github.io/zabrze_0809/
+
+Alternatywny hosting: https://instalacje-pv-zabrze.ofek485388.chatgpt.site
 
 ## Uruchomienie
 
@@ -24,4 +26,3 @@ npm run dev
 ## Dane
 
 Szczegóły źródeł, układów współrzędnych i usług znajdują się w [DATA_SOURCES.md](DATA_SOURCES.md).
-
