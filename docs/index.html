@@ -35,7 +35,7 @@
   <article class="card hidden" id="details"></article>
   <article class="card parcel hidden" id="parcel"></article>
   <section class="sheet hidden" id="sheet"><div class="sheet-head"><div><p class="eyebrow">11 instalacji · 10 pozycji</p><h2>Obiekty</h2></div><button class="icon" id="close-list" aria-label="Zamknij listę">×</button></div><div class="list" id="list"></div><p class="note">Podkłady: OpenStreetMap, ortofotomapa GUGiK i zdjęcia Esri. Działki: GUGiK / Geoportal (ULDK). Punkt przy ul. Rataja jest orientacyjny.</p></section>
-  <script src="modele3d.js?v=2"></script>
+  <script src="modele3d.js?v=3"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
   <script>
     const sites=[
@@ -61,11 +61,13 @@
     const $=id=>document.getElementById(id);const hide=id=>$(id).classList.add('hidden');const show=id=>$(id).classList.remove('hidden');
     function clearCards(){hide('hint');hide('details');hide('parcel')}
 
-    // --- podglad bryly z otoczeniem, rysowany recznie na canvasie
+    // --- podglad bryly z otoczeniem i ortofoto, rysowany recznie na canvasie
     const LEKKI=matchMedia('(prefers-reduced-motion: reduce)').matches;
     const SLONCE=[0.42,-0.62,0.66];
-    const WYS_UWAGI={h:'8,80 m do dolnej kraw\u0119dzi',j:'14 m',f:'9 m bez daszka'};
-    function initModel(cv,m){
+    const AZ0=-Math.PI/2,EL0=0.72;          // start: polnoc do gory, jak na mapie
+    const WYS_UWAGI={h:'8,80 m do dolnej krawędzi',j:'14 m',f:'9 m bez daszka'};
+    const ORTO='https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution';
+    function initModel(cv,m,lat,lon){
       const ctx=cv.getContext('2d'),V=[],SC=[];
       const dodaj=(v,f,cel)=>{
         const off=V.length/3;
@@ -93,7 +95,29 @@
       const c=[0,1,2].map(k=>(lo[k]+hi[k])/2);
       const promien=Math.max((Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])/2||1)*1.9,20);
       const N=V.length/3,PX=new Float32Array(N),PY=new Float32Array(N),PZ=new Float32Array(N);
-      let az=-0.75,el=0.72,auto=!LEKKI,czeka=false;
+      let az=AZ0,el=EL0,zoom=1,auto=!LEKKI,czeka=false;
+
+      // ortofoto GUGiK jako podloze: kwadrat GR x GR metrow wokol budynku.
+      // Mercator rozciaga metry o 1/cos(fi), stad przelicznik przy bboksie.
+      const GR=Math.round(promien*2.2),TEKS=512;
+      let tlo=null;
+      // srodek bryly z modelu jest dokladniejszy niz pinezka na mapie
+      if(m.ll){lat=m.ll[0];lon=m.ll[1]}
+      if(lat!=null){
+        const R0=6378137,rad=Math.PI/180;
+        const mx=lon*rad*R0,my=Math.log(Math.tan(Math.PI/4+lat*rad/2))*R0;
+        const d=GR/Math.cos(lat*rad);
+        tlo=new Image();
+        tlo.onload=()=>planuj(0);
+        tlo.onerror=()=>{tlo=null};
+        // uwaga: ten WMS oddaje 404 przy nazwach parametrow pisanych wielkimi
+        // literami - dziala tylko zapis malymi, taki jak wysyla Leaflet
+        tlo.src=ORTO+'?service=WMS&request=GetMap&layers=Raster&styles='
+          +'&format=image%2Fjpeg&transparent=false&version=1.3.0'
+          +'&width='+TEKS+'&height='+TEKS+'&crs=EPSG%3A3857'
+          +'&bbox='+[mx-d,my-d,mx+d,my+d].map(v=>v.toFixed(2)).join(',');
+      }
+
       function planuj(ms){if(czeka)return;czeka=true;setTimeout(()=>requestAnimationFrame(rysuj),ms||0)}
       function rysuj(){
         czeka=false;
@@ -103,13 +127,27 @@
         ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
         const ca=Math.cos(az),sa=Math.sin(az),ce=Math.cos(el),se=Math.sin(el);
         const r0=-sa,r1=ca,u0=-ca*se,u1=-sa*se,u2=ce,f0=ca*ce,f1=sa*ce,f2=-se;
-        const s=Math.min(w,h)/(promien*2.5);
+        const s=Math.min(w,h)/(promien*2.5)*zoom;
+
+        if(tlo&&tlo.complete&&tlo.naturalWidth){
+          const kr=2*GR/TEKS;                       // metry na piksel tekstury
+          const aX=kr*r0*s,aY=-kr*u0*s;             // przyrost na +u (wschod)
+          const bX=-kr*r1*s,bY=kr*u1*s;             // przyrost na +v (poludnie)
+          const gx=-GR-c[0],gy=GR-c[1],gz=-c[2];    // lewy gorny rog podloza
+          ctx.save();
+          ctx.transform(aX,aY,bX,bY,
+            w/2+(gx*r0+gy*r1)*s, h/2-(gx*u0+gy*u1+gz*u2)*s);
+          ctx.globalAlpha=0.88;
+          ctx.drawImage(tlo,0,0,TEKS,TEKS);
+          ctx.restore();
+        }
+
         for(let j=0;j<N;j++){
           const x=V[j*3]-c[0],y=V[j*3+1]-c[1],z=V[j*3+2]-c[2];
           PX[j]=w/2+(x*r0+y*r1)*s;PY[j]=h/2-(x*u0+y*u1+z*u2)*s;PZ[j]=x*f0+y*f1+z*f2;
         }
         for(const sc of SC){let d=0;for(const i of sc.i)d+=PZ[i];sc.d=d/sc.i.length}
-        SC.sort((a,b)=>b.d-a.d);                     // malarz: od najdalszych
+        SC.sort((a,b)=>b.d-a.d);                    // malarz: od najdalszych
         ctx.lineWidth=0.6;
         for(const sc of SC){
           ctx.fillStyle=sc.c;ctx.strokeStyle=sc.o;
@@ -117,29 +155,55 @@
           for(let k=1;k<sc.i.length;k++)ctx.lineTo(PX[sc.i[k]],PY[sc.i[k]]);
           ctx.closePath();ctx.fill();ctx.stroke();
         }
-        const kx=ca,ky=sa*se,kd=Math.hypot(kx,ky)||1,ox=24,oy=h-24,R=11;
-        ctx.strokeStyle='rgba(16,40,28,.32)';ctx.lineWidth=1;
-        ctx.beginPath();ctx.arc(ox,oy,R,0,6.284);ctx.stroke();
+
+        // roza wiatrow - kierunek liczony tym samym rzutem co geometria
+        const nx=r1,ny=-u1,nd=Math.hypot(nx,ny)||1,ox=24,oy=h-24,R=11;
+        ctx.strokeStyle='rgba(16,40,28,.34)';ctx.lineWidth=1;ctx.fillStyle='#ffffffcc';
+        ctx.beginPath();ctx.arc(ox,oy,R,0,6.284);ctx.fill();ctx.stroke();
         ctx.strokeStyle='#166534';ctx.lineWidth=2;ctx.beginPath();
-        ctx.moveTo(ox-kx/kd*R*0.75,oy+ky/kd*R*0.75);ctx.lineTo(ox+kx/kd*R*0.8,oy-ky/kd*R*0.8);ctx.stroke();
+        ctx.moveTo(ox-nx/nd*R*0.75,oy-ny/nd*R*0.75);
+        ctx.lineTo(ox+nx/nd*R*0.8,oy+ny/nd*R*0.8);ctx.stroke();
         ctx.fillStyle='#166534';ctx.font='700 9px Inter,system-ui,sans-serif';
         ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText('N',ox+kx/kd*(R+7),oy-ky/kd*(R+7));
+        ctx.fillText('N',ox+nx/nd*(R+7),oy+ny/nd*(R+7));
+
         if(auto){az+=0.009;planuj(40)}
       }
-      let ost=null;
-      cv.addEventListener('pointerdown',e=>{auto=false;ost=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId)});
-      cv.addEventListener('pointermove',e=>{if(!ost)return;
+
+      // obrot jednym palcem, przyblizanie dwoma albo kolkiem
+      const akt=new Map();let ost=null,dyst0=0,zoom0=1;
+      const skala=v=>Math.max(0.6,Math.min(6,v));
+      cv.addEventListener('pointerdown',e=>{
+        cv.setPointerCapture(e.pointerId);akt.set(e.pointerId,[e.clientX,e.clientY]);auto=false;
+        if(akt.size===2){const p=[...akt.values()];
+          dyst0=Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]);zoom0=zoom;ost=null}
+        else ost=[e.clientX,e.clientY];
+      });
+      cv.addEventListener('pointermove',e=>{
+        if(!akt.has(e.pointerId))return;
+        akt.set(e.pointerId,[e.clientX,e.clientY]);
+        if(akt.size>=2){
+          const p=[...akt.values()],d=Math.hypot(p[0][0]-p[1][0],p[0][1]-p[1][1]);
+          if(dyst0>0)zoom=skala(zoom0*d/dyst0);
+          planuj(0);return;
+        }
+        if(!ost)return;
         az+=(e.clientX-ost[0])*0.011;
         // os pionowa zablokowana miedzy 20 a 77 stopni - nigdy od spodu
         el=Math.max(0.35,Math.min(1.35,el+(e.clientY-ost[1])*0.008));
-        ost=[e.clientX,e.clientY];planuj(0)});
-      const koniec=()=>{ost=null};
-      cv.addEventListener('pointerup',koniec);cv.addEventListener('pointercancel',koniec);
+        ost=[e.clientX,e.clientY];planuj(0);
+      });
+      const koniec=e=>{akt.delete(e.pointerId);dyst0=0;
+        ost=akt.size===1?[...akt.values()][0]:null};
+      cv.addEventListener('pointerup',koniec);
+      cv.addEventListener('pointercancel',koniec);
+      cv.addEventListener('wheel',e=>{e.preventDefault();auto=false;
+        zoom=skala(zoom*Math.exp(-e.deltaY*0.0015));planuj(0)},{passive:false});
+      cv.addEventListener('dblclick',()=>{az=AZ0;el=EL0;zoom=1;auto=false;planuj(0)});
       new ResizeObserver(()=>planuj(0)).observe(cv);
       rysuj();
     }
-    function showSite(s){clearCards();const model=(window.modele3d||{})[s[0]];const uw=WYS_UWAGI[s[0]];const zr=model&&model.zrodlo==='LOD1'?'LOD1 2024, prostopadłościan bez modelowanego dachu':'LOD2 2017';const viewer=model?`<div class="viewer"><canvas></canvas><b class="vh">${String(model.h).replace('.',',')} m</b><b class="vsrc">${model.zrodlo}</b><i class="vhint">obróć palcem</i></div><p class="vopis"><b>${String(model.h).replace('.',',')} m</b> — cała bryła, od terenu do najwyższego punktu (${zr}).${uw?` Pomiar w terenie: <b>${uw}</b>.`:''} Bryły są zamknięte — wnętrza nie widać. Szare to sąsiednia zabudowa istotna dla zacienienia.</p>`:'';const gallery=`<p class="photos-label">Zdjęcia z drona · ${s[8].length}</p><div class="photos ${s[8].length===1?'one':''}">${s[8].map((n,i)=>`<a href="obiekty/${n}.jpg" target="_blank" rel="noreferrer" aria-label="Otwórz zdjęcie ${i+1} obiektu ${s[0].toUpperCase()}"><img src="obiekty/${n}_t.jpg" alt="Zdjęcie z drona, obiekt ${s[0].toUpperCase()}, ujęcie ${i+1}" loading="lazy" decoding="async" width="520" height="293"></a>`).join('')}</div>`;$('details').innerHTML=`<button class="close" aria-label="Zamknij">×</button><div class="site-head"><span class="letter">${s[0]}</span><div><p>${s[2]}</p><h2>${s[1]}</h2></div></div>${viewer}${gallery}<div class="facts"><div><span>Zakres</span><b>${s[4]}</b></div><div><span>Moc</span><b>${s[5]}</b></div><div><span>Działka</span><b>${s[3]}</b></div></div><div class="detail-actions"><a class="route" target="_blank" rel="noreferrer" href="https://www.google.com/maps/dir/?api=1&destination=${s[6]},${s[7]}">↗ Trasa</a><a class="streetview" target="_blank" rel="noreferrer" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${s[6]},${s[7]}">◉ Street View</a></div>`;show('details');if(model)initModel($('details').querySelector('.viewer canvas'),model);$('details').querySelector('.close').onclick=()=>{hide('details');show('hint')}}
+    function showSite(s){clearCards();const model=(window.modele3d||{})[s[0]];const uw=WYS_UWAGI[s[0]];const zr=model&&model.zrodlo==='LOD1'?'LOD1 2024, prostopadłościan bez modelowanego dachu':'LOD2 2017';const viewer=model?`<div class="viewer"><canvas></canvas><b class="vh">${String(model.h).replace('.',',')} m</b><b class="vsrc">${model.zrodlo}</b><i class="vhint">obróć · przybliż</i></div><p class="vopis"><b>${String(model.h).replace('.',',')} m</b> — cała bryła, od terenu do najwyższego punktu (${zr}).${uw?` Pomiar w terenie: <b>${uw}</b>.`:''} Bryły są zamknięte — wnętrza nie widać. Szare to sąsiednia zabudowa istotna dla zacienienia. Podkład: ortofotomapa GUGiK.</p>`:'';const gallery=`<p class="photos-label">Zdjęcia z drona · ${s[8].length}</p><div class="photos ${s[8].length===1?'one':''}">${s[8].map((n,i)=>`<a href="obiekty/${n}.jpg" target="_blank" rel="noreferrer" aria-label="Otwórz zdjęcie ${i+1} obiektu ${s[0].toUpperCase()}"><img src="obiekty/${n}_t.jpg" alt="Zdjęcie z drona, obiekt ${s[0].toUpperCase()}, ujęcie ${i+1}" loading="lazy" decoding="async" width="520" height="293"></a>`).join('')}</div>`;$('details').innerHTML=`<button class="close" aria-label="Zamknij">×</button><div class="site-head"><span class="letter">${s[0]}</span><div><p>${s[2]}</p><h2>${s[1]}</h2></div></div>${viewer}${gallery}<div class="facts"><div><span>Zakres</span><b>${s[4]}</b></div><div><span>Moc</span><b>${s[5]}</b></div><div><span>Działka</span><b>${s[3]}</b></div></div><div class="detail-actions"><a class="route" target="_blank" rel="noreferrer" href="https://www.google.com/maps/dir/?api=1&destination=${s[6]},${s[7]}">↗ Trasa</a><a class="streetview" target="_blank" rel="noreferrer" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${s[6]},${s[7]}">◉ Street View</a></div>`;show('details');if(model)initModel($('details').querySelector('.viewer canvas'),model,s[6],s[7]);$('details').querySelector('.close').onclick=()=>{hide('details');show('hint')}}
     sites.forEach(s=>{const icon=L.divIcon({className:'',html:`<span class="pv-marker"><b>${s[0].toUpperCase()}</b></span>`,iconSize:[38,46],iconAnchor:[19,43]});const m=L.marker([s[6],s[7]],{icon,bubblingMouseEvents:false,title:`${s[0]}) ${s[1]}`}).addTo(map).on('click',()=>showSite(s));markers[s[0]]=m;bounds.push([s[6],s[7]])});map.fitBounds(bounds,{paddingTopLeft:[22,100],paddingBottomRight:[22,125],maxZoom:14});updateCadastre();
     $('list').innerHTML=sites.map(s=>`<button data-id="${s[0]}"><span class="letter">${s[0]}</span><span><strong>${s[1]}</strong><small>${s[2]}</small><em>${s[5]}</em></span></button>`).join('');$('list').onclick=e=>{const b=e.target.closest('button');if(!b)return;const s=sites.find(x=>x[0]===b.dataset.id);hide('sheet');map.flyTo([s[6],s[7]],17);showSite(s)};
     $('open-list').onclick=$('hint').onclick=()=>show('sheet');$('close-list').onclick=()=>hide('sheet');
