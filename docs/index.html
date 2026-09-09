@@ -86,7 +86,6 @@
         let cx=0,cy=0,cz=0;
         for(let i=0;i<v.length;i+=3){cx+=v[i];cy+=v[i+1];cz+=v[i+2]}
         const n3=v.length/3||1;cx/=n3;cy/=n3;cz/=n3;
-        let obj=0;
         const norm=[];
         for(const t of f){
           if(t.length<3){norm.push(null);continue}
@@ -96,15 +95,7 @@
           let n=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]];
           const dl=Math.hypot(n[0],n[1],n[2])||1;
           norm.push([n[0]/dl,n[1]/dl,n[2]/dl]);
-          for(let k=1;k<t.length-1;k++){        // wachlarz trojkatow
-            const p=[t[0],t[k],t[k+1]].map(i=>[v[i*3]-cx,v[i*3+1]-cy,v[i*3+2]-cz]);
-            obj+=p[0][0]*(p[1][1]*p[2][2]-p[1][2]*p[2][1])
-                -p[0][1]*(p[1][0]*p[2][2]-p[1][2]*p[2][0])
-                +p[0][2]*(p[1][0]*p[2][1]-p[1][1]*p[2][0]);
-          }
         }
-        obj/=6;
-        const zamkn=Math.abs(obj)>5;            // ponizej 5 m3 to nie jest bryla
         f.forEach((t,j)=>{
           const n=norm[j];
           if(!n)return;
@@ -119,7 +110,7 @@
                        +0.20*Math.max(0,nn[2]);
           const dach=nn[2]>0.55;
           const baza=cel?(dach?[201,132,66]:[219,166,98]):(dach?[166,176,166]:[194,202,193]);
-          SC.push({i:t.map(i=>i+off),d:0,n:nn,dwustr:!zamkn,
+          SC.push({i:t.map(i=>i+off),d:0,n:nn,
                    c:'rgb('+baza.map(x=>Math.round(x*jas)).join(',')+')',
                    o:cel?'rgba(74,38,8,.34)':'rgba(16,40,28,.14)'});
         });
@@ -144,7 +135,15 @@
 
       // ortofoto GUGiK jako podloze: kwadrat GR x GR metrow wokol budynku.
       // Mercator rozciaga metry o 1/cos(fi), stad przelicznik przy bboksie.
-      const GR=Math.round(promien*2.2),TEKS=512;
+      // Podloze musi zakryc takze najdalszych sasiadow (do 100 m), inaczej
+      // stoja poza zdjeciem albo tna sie o jego krawedz.
+      let zasieg=promien*2.2;
+      for(let j=0;j<N;j++){
+        const dx=Math.abs(V[j*3]-c[0]),dy=Math.abs(V[j*3+1]-c[1]);
+        if(dx>zasieg)zasieg=dx;
+        if(dy>zasieg)zasieg=dy;
+      }
+      const GR=Math.round(zasieg*1.1),TEKS=512;
       let tlo=null;
       // srodek bryly z modelu jest dokladniejszy niz pinezka na mapie
       if(m.ll){lat=m.ll[0];lon=m.ll[1]}
@@ -210,16 +209,22 @@
           const x=V[j*3]-c[0],y=V[j*3+1]-c[1],z=V[j*3+2]-c[2];
           PX[j]=w/2+(x*r0+y*r1)*s;PY[j]=h/2-(x*u0+y*u1+z*u2)*s;PZ[j]=x*f0+y*f1+z*f2;
         }
-        // zostaja tylko sciany zwrocone do kamery - wnetrza bryly nie widac
-        const widoczne=[];
+        // Zadnej sciany nie wyrzucamy - przy budynkach z wnekami test na strone
+        // zewnetrzna potrafi sie pomylic, a wyciecie sciany robi dziure, przez
+        // ktora widac wnetrze. Zamiast tego dwa przebiegi: najpierw sciany
+        // odwrocone tylem, potem przednie. Dla bryly zamknietej kazda przednia
+        // jest przed kazda tylna, wiec kolejnosc jest scisla, a pomylka w
+        // normalnej najwyzej zle przydziela sciane do grupy - nie gubi jej.
+        const tyl=[],przod=[];
         for(const sc of SC){
-          if(!sc.dwustr&&sc.n[0]*f0+sc.n[1]*f1+sc.n[2]*f2>=0)continue;
           let d=0;for(const i of sc.i)d+=PZ[i];
-          sc.d=d/sc.i.length;widoczne.push(sc);
+          sc.d=d/sc.i.length;
+          (sc.n[0]*f0+sc.n[1]*f1+sc.n[2]*f2>=0?tyl:przod).push(sc);
         }
-        widoczne.sort((a,b)=>b.d-a.d);              // malarz: od najdalszych
+        tyl.sort((a,b)=>b.d-a.d);                   // malarz: od najdalszych
+        przod.sort((a,b)=>b.d-a.d);
         ctx.lineWidth=0.6;
-        for(const sc of widoczne){
+        for(const sc of tyl.concat(przod)){
           ctx.fillStyle=sc.c;ctx.strokeStyle=sc.o;
           ctx.beginPath();ctx.moveTo(PX[sc.i[0]],PY[sc.i[0]]);
           for(let k=1;k<sc.i.length;k++)ctx.lineTo(PX[sc.i[k]],PY[sc.i[k]]);
