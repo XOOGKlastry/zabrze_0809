@@ -17,8 +17,15 @@ Bryły LOD2 mają zamodelowany kształt dachu i pochodzą z nalotu z 2017 r. Dwa
 **c** (Powiatowy Urząd Pracy) i **g** (Centrum Usług Społecznych) — pokazywane są z modelu
 LOD1 2024: pierwszy został po 2017 r. przebudowany, drugiego w LOD2 brak. LOD1 nie modeluje
 połaci, więc te dwie bryły to prostopadłościany, co sygnalizuje plakietka przy podglądzie.
+Bryły rysowane są bez ścian odwróconych tyłem do kamery, więc są pełne i nie widać ich
+wnętrza. Strony zewnętrznej nie da się wziąć z kolejności wierzchołków — w danych LOD2
+ściany bywają nawinięte niekonsekwentnie — więc wyznaczana jest geometrycznie, względem
+środka każdej bryły osobno. Dlatego zabudowa sąsiednia jest zapisana budynek po budynku
+(pole `o`), a nie jednym zlepkiem.
+
 Podgląd startuje z północą do góry, obraca się sam do pierwszego dotknięcia, przybliża
 kółkiem lub dwoma palcami, a podwójne kliknięcie wraca do ustawienia wyjściowego.
+Przycisk w prawym górnym rogu rozwija podgląd na cały ekran (Esc zamyka).
 Ortofoto pod bryłami jest wpasowane na środek budynku wyliczony z modelu (pole `ll`),
 nie na pozycję pinezki na mapie.
 

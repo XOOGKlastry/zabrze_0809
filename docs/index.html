@@ -19,6 +19,12 @@
     .viewer canvas:active{cursor:grabbing}
     .viewer .vh{position:absolute;top:9px;left:10px;padding:3px 8px;border-radius:8px;background:#10281cd9;color:#fff;font-size:11px;font-weight:800}
     .viewer .vsrc{position:absolute;top:9px;right:10px;padding:3px 8px;border-radius:8px;background:#ffffffd9;color:#5f7266;font-size:10px;font-weight:800;letter-spacing:.04em}
+    .viewer .vfull{position:absolute;top:8px;right:9px;width:30px;height:30px;display:grid;place-items:center;border:1px solid #10281c1f;border-radius:9px;background:#ffffffe0;color:#10281c;font-size:14px;line-height:1;cursor:pointer;padding:0}
+    .viewer .vfull:hover{background:#fff}
+    .viewer .vsrc{right:47px}
+    .viewer.pelny{position:fixed;inset:0;z-index:900;margin:0;border:0;border-radius:0}
+    .viewer.pelny canvas{height:100%}
+    .viewer.pelny .vhint{bottom:14px}
     .vopis{margin:9px 0 0;color:#5f7266;font-size:11.5px;line-height:1.45}
     .vopis b{color:#10281c;font-weight:800}
     .photos-label{margin:15px 0 -6px;color:#5f7266;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
@@ -35,7 +41,7 @@
   <article class="card hidden" id="details"></article>
   <article class="card parcel hidden" id="parcel"></article>
   <section class="sheet hidden" id="sheet"><div class="sheet-head"><div><p class="eyebrow">11 instalacji · 10 pozycji</p><h2>Obiekty</h2></div><button class="icon" id="close-list" aria-label="Zamknij listę">×</button></div><div class="list" id="list"></div><p class="note">Podkłady: OpenStreetMap, ortofotomapa GUGiK i zdjęcia Esri. Działki: GUGiK / Geoportal (ULDK). Punkt przy ul. Rataja jest orientacyjny.</p></section>
-  <script src="modele3d.js?v=3"></script>
+  <script src="modele3d.js?v=4"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
   <script>
     const sites=[
@@ -69,26 +75,58 @@
     const ORTO='https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution';
     function initModel(cv,m,lat,lon){
       const ctx=cv.getContext('2d'),V=[],SC=[];
+
+      // Kazda bryla liczona osobno. Normalne kierujemy na zewnatrz wzgledem
+      // srodka bryly, dzieki czemu mozna odrzucic sciany odwrocone tylem -
+      // bryla jest wtedy pelna i nie widac jej wnetrza.
       const dodaj=(v,f,cel)=>{
         const off=V.length/3;
         for(const w of v)V.push(w);
+        let cx=0,cy=0,cz=0;
+        for(let i=0;i<v.length;i+=3){cx+=v[i];cy+=v[i+1];cz+=v[i+2]}
+        const n3=v.length/3||1;cx/=n3;cy/=n3;cz/=n3;
+        let obj=0;
+        const norm=[];
         for(const t of f){
-          if(t.length<3)continue;
-          const idx=t.map(i=>i+off),a=idx[0]*3,b=idx[1]*3,c=idx[2]*3;
-          const e1=[V[b]-V[a],V[b+1]-V[a+1],V[b+2]-V[a+2]];
-          const e2=[V[c]-V[a],V[c+1]-V[a+1],V[c+2]-V[a+2]];
+          if(t.length<3){norm.push(null);continue}
+          const a=t[0]*3,b=t[1]*3,c=t[2]*3;
+          const e1=[v[b]-v[a],v[b+1]-v[a+1],v[b+2]-v[a+2]];
+          const e2=[v[c]-v[a],v[c+1]-v[a+1],v[c+2]-v[a+2]];
           let n=[e1[1]*e2[2]-e1[2]*e2[1],e1[2]*e2[0]-e1[0]*e2[2],e1[0]*e2[1]-e1[1]*e2[0]];
-          const dl=Math.hypot(n[0],n[1],n[2])||1;n=[n[0]/dl,n[1]/dl,n[2]/dl];
-          const jas=0.44+0.56*Math.abs(n[0]*SLONCE[0]+n[1]*SLONCE[1]+n[2]*SLONCE[2]);
-          const dach=Math.abs(n[2])>0.55;
-          const baza=cel?(dach?[201,132,66]:[219,166,98]):(dach?[166,176,166]:[194,202,193]);
-          SC.push({i:idx,d:0,c:'rgb('+baza.map(x=>Math.round(x*jas)).join(',')+')',
-                   o:cel?'rgba(74,38,8,.34)':'rgba(16,40,28,.14)'});
+          const dl=Math.hypot(n[0],n[1],n[2])||1;
+          norm.push([n[0]/dl,n[1]/dl,n[2]/dl]);
+          for(let k=1;k<t.length-1;k++){        // wachlarz trojkatow
+            const p=[t[0],t[k],t[k+1]].map(i=>[v[i*3]-cx,v[i*3+1]-cy,v[i*3+2]-cz]);
+            obj+=p[0][0]*(p[1][1]*p[2][2]-p[1][2]*p[2][1])
+                -p[0][1]*(p[1][0]*p[2][2]-p[1][2]*p[2][0])
+                +p[0][2]*(p[1][0]*p[2][1]-p[1][1]*p[2][0]);
+          }
         }
+        obj/=6;
+        const zamkn=Math.abs(obj)>5;            // ponizej 5 m3 to nie jest bryla
+        f.forEach((t,j)=>{
+          const n=norm[j];
+          if(!n)return;
+          // W danych LOD2 sciany bywaja nawiniete raz tak, raz odwrotnie, wiec
+          // strony zewnetrznej nie da sie wziac z kolejnosci wierzcholkow.
+          // Ustalamy ja geometrycznie: normalna ma odchodzic od srodka bryly.
+          let fx=0,fy=0,fz=0;
+          for(const i of t){fx+=v[i*3];fy+=v[i*3+1];fz+=v[i*3+2]}
+          fx=fx/t.length-cx;fy=fy/t.length-cy;fz=fz/t.length-cz;
+          const nn=(n[0]*fx+n[1]*fy+n[2]*fz)<0?[-n[0],-n[1],-n[2]]:n;
+          const jas=0.46+0.34*Math.max(0,nn[0]*SLONCE[0]+nn[1]*SLONCE[1]+nn[2]*SLONCE[2])
+                       +0.20*Math.max(0,nn[2]);
+          const dach=nn[2]>0.55;
+          const baza=cel?(dach?[201,132,66]:[219,166,98]):(dach?[166,176,166]:[194,202,193]);
+          SC.push({i:t.map(i=>i+off),d:0,n:nn,dwustr:!zamkn,
+                   c:'rgb('+baza.map(x=>Math.round(x*jas)).join(',')+')',
+                   o:cel?'rgba(74,38,8,.34)':'rgba(16,40,28,.14)'});
+        });
       };
       dodaj(m.v,m.f,true);
       const nCelu=V.length/3;
-      if(m.ov&&m.ov.length)dodaj(m.ov,m.of,false);
+      for(const b of (m.o||[]))dodaj(b.v,b.f,false);
+
       // kadr ustawiony na bryle badanej, otoczenie moze wychodzic poza brzeg
       let lo=[1e9,1e9,1e9],hi=[-1e9,-1e9,-1e9];
       for(let j=0;j<nCelu;j++)for(let k=0;k<3;k++){const w=V[j*3+k];if(w<lo[k])lo[k]=w;if(w>hi[k])hi[k]=w}
@@ -107,15 +145,22 @@
         const R0=6378137,rad=Math.PI/180;
         const mx=lon*rad*R0,my=Math.log(Math.tan(Math.PI/4+lat*rad/2))*R0;
         const d=GR/Math.cos(lat*rad);
-        tlo=new Image();
-        tlo.onload=()=>planuj(0);
-        tlo.onerror=()=>{tlo=null};
         // uwaga: ten WMS oddaje 404 przy nazwach parametrow pisanych wielkimi
-        // literami - dziala tylko zapis malymi, taki jak wysyla Leaflet
-        tlo.src=ORTO+'?service=WMS&request=GetMap&layers=Raster&styles='
+        // literami - dziala tylko zapis malymi, taki jak wysyla Leaflet.
+        // Bywa tez niestabilny: to samo zapytanie raz wraca 200, raz 404,
+        // wiec ponawiamy je dwa razy, zanim odpuscimy podloze.
+        const adres=ORTO+'?service=WMS&request=GetMap&layers=Raster&styles='
           +'&format=image%2Fjpeg&transparent=false&version=1.3.0'
           +'&width='+TEKS+'&height='+TEKS+'&crs=EPSG%3A3857'
           +'&bbox='+[mx-d,my-d,mx+d,my+d].map(v=>v.toFixed(2)).join(',');
+        let proby=0;
+        const wczytaj=()=>{
+          const img=new Image();
+          img.onload=()=>{tlo=img;planuj(0)};
+          img.onerror=()=>{tlo=null;if(++proby<3)setTimeout(wczytaj,900*proby)};
+          img.src=adres;
+        };
+        wczytaj();
       }
 
       function planuj(ms){if(czeka)return;czeka=true;setTimeout(()=>requestAnimationFrame(rysuj),ms||0)}
@@ -123,6 +168,7 @@
         czeka=false;
         if(!cv.isConnected)return;
         const dpr=Math.min(devicePixelRatio||1,2),w=cv.clientWidth,h=cv.clientHeight;
+        if(!w||!h)return;
         if(cv.width!==w*dpr||cv.height!==h*dpr){cv.width=w*dpr;cv.height=h*dpr}
         ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
         const ca=Math.cos(az),sa=Math.sin(az),ce=Math.cos(el),se=Math.sin(el);
@@ -146,10 +192,16 @@
           const x=V[j*3]-c[0],y=V[j*3+1]-c[1],z=V[j*3+2]-c[2];
           PX[j]=w/2+(x*r0+y*r1)*s;PY[j]=h/2-(x*u0+y*u1+z*u2)*s;PZ[j]=x*f0+y*f1+z*f2;
         }
-        for(const sc of SC){let d=0;for(const i of sc.i)d+=PZ[i];sc.d=d/sc.i.length}
-        SC.sort((a,b)=>b.d-a.d);                    // malarz: od najdalszych
-        ctx.lineWidth=0.6;
+        // zostaja tylko sciany zwrocone do kamery - wnetrza bryly nie widac
+        const widoczne=[];
         for(const sc of SC){
+          if(!sc.dwustr&&sc.n[0]*f0+sc.n[1]*f1+sc.n[2]*f2>=0)continue;
+          let d=0;for(const i of sc.i)d+=PZ[i];
+          sc.d=d/sc.i.length;widoczne.push(sc);
+        }
+        widoczne.sort((a,b)=>b.d-a.d);              // malarz: od najdalszych
+        ctx.lineWidth=0.6;
+        for(const sc of widoczne){
           ctx.fillStyle=sc.c;ctx.strokeStyle=sc.o;
           ctx.beginPath();ctx.moveTo(PX[sc.i[0]],PY[sc.i[0]]);
           for(let k=1;k<sc.i.length;k++)ctx.lineTo(PX[sc.i[k]],PY[sc.i[k]]);
@@ -200,10 +252,22 @@
       cv.addEventListener('wheel',e=>{e.preventDefault();auto=false;
         zoom=skala(zoom*Math.exp(-e.deltaY*0.0015));planuj(0)},{passive:false});
       cv.addEventListener('dblclick',()=>{az=AZ0;el=EL0;zoom=1;auto=false;planuj(0)});
+
+      // pelny ekran: nakladka na cala strone, bez Fullscreen API - dziala tez na iOS
+      const ramka=cv.parentElement,btn=ramka.querySelector('.vfull');
+      const przelacz=wl=>{
+        ramka.classList.toggle('pelny',wl);
+        if(btn){btn.textContent=wl?'✕':'⛶';
+          btn.setAttribute('aria-label',wl?'Zamknij pełny ekran':'Pełny ekran')}
+        planuj(0);
+      };
+      if(btn)btn.onclick=()=>przelacz(!ramka.classList.contains('pelny'));
+      document.addEventListener('keydown',e=>{
+        if(e.key==='Escape'&&ramka.classList.contains('pelny'))przelacz(false)});
       new ResizeObserver(()=>planuj(0)).observe(cv);
       rysuj();
     }
-    function showSite(s){clearCards();const model=(window.modele3d||{})[s[0]];const uw=WYS_UWAGI[s[0]];const zr=model&&model.zrodlo==='LOD1'?'LOD1 2024, prostopadłościan bez modelowanego dachu':'LOD2 2017';const viewer=model?`<div class="viewer"><canvas></canvas><b class="vh">${String(model.h).replace('.',',')} m</b><b class="vsrc">${model.zrodlo}</b><i class="vhint">obróć · przybliż</i></div><p class="vopis"><b>${String(model.h).replace('.',',')} m</b> — cała bryła, od terenu do najwyższego punktu (${zr}).${uw?` Pomiar w terenie: <b>${uw}</b>.`:''} Bryły są zamknięte — wnętrza nie widać. Szare to sąsiednia zabudowa istotna dla zacienienia. Podkład: ortofotomapa GUGiK.</p>`:'';const gallery=`<p class="photos-label">Zdjęcia z drona · ${s[8].length}</p><div class="photos ${s[8].length===1?'one':''}">${s[8].map((n,i)=>`<a href="obiekty/${n}.jpg" target="_blank" rel="noreferrer" aria-label="Otwórz zdjęcie ${i+1} obiektu ${s[0].toUpperCase()}"><img src="obiekty/${n}_t.jpg" alt="Zdjęcie z drona, obiekt ${s[0].toUpperCase()}, ujęcie ${i+1}" loading="lazy" decoding="async" width="520" height="293"></a>`).join('')}</div>`;$('details').innerHTML=`<button class="close" aria-label="Zamknij">×</button><div class="site-head"><span class="letter">${s[0]}</span><div><p>${s[2]}</p><h2>${s[1]}</h2></div></div>${viewer}${gallery}<div class="facts"><div><span>Zakres</span><b>${s[4]}</b></div><div><span>Moc</span><b>${s[5]}</b></div><div><span>Działka</span><b>${s[3]}</b></div></div><div class="detail-actions"><a class="route" target="_blank" rel="noreferrer" href="https://www.google.com/maps/dir/?api=1&destination=${s[6]},${s[7]}">↗ Trasa</a><a class="streetview" target="_blank" rel="noreferrer" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${s[6]},${s[7]}">◉ Street View</a></div>`;show('details');if(model)initModel($('details').querySelector('.viewer canvas'),model,s[6],s[7]);$('details').querySelector('.close').onclick=()=>{hide('details');show('hint')}}
+    function showSite(s){clearCards();const model=(window.modele3d||{})[s[0]];const uw=WYS_UWAGI[s[0]];const zr=model&&model.zrodlo==='LOD1'?'LOD1 2024, prostopadłościan bez modelowanego dachu':'LOD2 2017';const viewer=model?`<div class="viewer"><canvas></canvas><b class="vh">${String(model.h).replace('.',',')} m</b><b class="vsrc">${model.zrodlo}</b><i class="vhint">obróć · przybliż</i><button class="vfull" type="button" aria-label="Pełny ekran">⛶</button></div><p class="vopis"><b>${String(model.h).replace('.',',')} m</b> — cała bryła, od terenu do najwyższego punktu (${zr}).${uw?` Pomiar w terenie: <b>${uw}</b>.`:''} Bryły są zamknięte — wnętrza nie widać. Szare to sąsiednia zabudowa istotna dla zacienienia. Podkład: ortofotomapa GUGiK.</p>`:'';const gallery=`<p class="photos-label">Zdjęcia z drona · ${s[8].length}</p><div class="photos ${s[8].length===1?'one':''}">${s[8].map((n,i)=>`<a href="obiekty/${n}.jpg" target="_blank" rel="noreferrer" aria-label="Otwórz zdjęcie ${i+1} obiektu ${s[0].toUpperCase()}"><img src="obiekty/${n}_t.jpg" alt="Zdjęcie z drona, obiekt ${s[0].toUpperCase()}, ujęcie ${i+1}" loading="lazy" decoding="async" width="520" height="293"></a>`).join('')}</div>`;$('details').innerHTML=`<button class="close" aria-label="Zamknij">×</button><div class="site-head"><span class="letter">${s[0]}</span><div><p>${s[2]}</p><h2>${s[1]}</h2></div></div>${viewer}${gallery}<div class="facts"><div><span>Zakres</span><b>${s[4]}</b></div><div><span>Moc</span><b>${s[5]}</b></div><div><span>Działka</span><b>${s[3]}</b></div></div><div class="detail-actions"><a class="route" target="_blank" rel="noreferrer" href="https://www.google.com/maps/dir/?api=1&destination=${s[6]},${s[7]}">↗ Trasa</a><a class="streetview" target="_blank" rel="noreferrer" href="https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${s[6]},${s[7]}">◉ Street View</a></div>`;show('details');if(model)initModel($('details').querySelector('.viewer canvas'),model,s[6],s[7]);$('details').querySelector('.close').onclick=()=>{hide('details');show('hint')}}
     sites.forEach(s=>{const icon=L.divIcon({className:'',html:`<span class="pv-marker"><b>${s[0].toUpperCase()}</b></span>`,iconSize:[38,46],iconAnchor:[19,43]});const m=L.marker([s[6],s[7]],{icon,bubblingMouseEvents:false,title:`${s[0]}) ${s[1]}`}).addTo(map).on('click',()=>showSite(s));markers[s[0]]=m;bounds.push([s[6],s[7]])});map.fitBounds(bounds,{paddingTopLeft:[22,100],paddingBottomRight:[22,125],maxZoom:14});updateCadastre();
     $('list').innerHTML=sites.map(s=>`<button data-id="${s[0]}"><span class="letter">${s[0]}</span><span><strong>${s[1]}</strong><small>${s[2]}</small><em>${s[5]}</em></span></button>`).join('');$('list').onclick=e=>{const b=e.target.closest('button');if(!b)return;const s=sites.find(x=>x[0]===b.dataset.id);hide('sheet');map.flyTo([s[6],s[7]],17);showSite(s)};
     $('open-list').onclick=$('hint').onclick=()=>show('sheet');$('close-list').onclick=()=>hide('sheet');
