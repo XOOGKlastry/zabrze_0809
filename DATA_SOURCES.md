@@ -27,7 +27,11 @@ Podgląd startuje z północą do góry, obraca się sam do pierwszego dotknięc
 kółkiem lub dwoma palcami, a podwójne kliknięcie wraca do ustawienia wyjściowego.
 Przycisk w prawym górnym rogu rozwija podgląd na cały ekran (Esc zamyka).
 Ortofoto pod bryłami jest wpasowane na środek budynku wyliczony z modelu (pole `ll`),
-nie na pozycję pinezki na mapie.
+nie na pozycję pinezki na mapie. Płaszczyzna terenu leży na najniższym punkcie całej sceny,
+a nie na zerze budynku badanego — sąsiedzi stoją na własnych rzędnych i przy spadku terenu
+sięgają nawet 3 m niżej, więc na płaszczyźnie na poziomie zera byliby częściowo wkopani.
+Zdjęcie lotnicze i tak pokazuje te same budynki na płasko, więc przy niskim kącie widać
+jednocześnie bryłę i jej odbicie w ortofoto — to nie jest błąd wpasowania.
 
 Wysokość podana przy modelu to różnica rzędnych całej bryły — od terenu do najwyższego
 punktu — i tak jest opisana pod podglądem. Dla trzech obiektów podano obok pomiar z terenu,

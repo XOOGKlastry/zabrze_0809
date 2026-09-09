@@ -132,6 +132,12 @@
       for(let j=0;j<nCelu;j++)for(let k=0;k<3;k++){const w=V[j*3+k];if(w<lo[k])lo[k]=w;if(w>hi[k])hi[k]=w}
       const c=[0,1,2].map(k=>(lo[k]+hi[k])/2);
       const promien=Math.max((Math.max(hi[0]-lo[0],hi[1]-lo[1],hi[2]-lo[2])/2||1)*1.9,20);
+      // Podloze klademy na najnizszym punkcie calej sceny, nie na zerze bryly
+      // badanej. Sasiedzi stoja na wlasnych rzednych terenu i przy spadku
+      // potrafia siegac ponizej - na plaskiej plaszczyznie wygladaliby jak
+      // wkopani w ziemie.
+      let zGrunt=0;
+      for(let i=2;i<V.length;i+=3)if(V[i]<zGrunt)zGrunt=V[i];
       const N=V.length/3,PX=new Float32Array(N),PY=new Float32Array(N),PZ=new Float32Array(N);
       let az=AZ0,el=EL0,zoom=1,auto=!LEKKI,czeka=false;
 
@@ -179,12 +185,14 @@
           const kr=2*GR/TEKS;                       // metry na piksel tekstury
           const aX=kr*r0*s,aY=-kr*u0*s;             // przyrost na +u (wschod)
           const bX=-kr*r1*s,bY=kr*u1*s;             // przyrost na +v (poludnie)
-          const gx=-GR-c[0],gy=GR-c[1],gz=-c[2];    // lewy gorny rog podloza
+          const gx=-GR-c[0],gy=GR-c[1],gz=zGrunt-c[2];  // lewy gorny rog podloza
           ctx.save();
           ctx.transform(aX,aY,bX,bY,
             w/2+(gx*r0+gy*r1)*s, h/2-(gx*u0+gy*u1+gz*u2)*s);
-          ctx.globalAlpha=0.88;
+          ctx.globalAlpha=0.82;
           ctx.drawImage(tlo,0,0,TEKS,TEKS);
+          ctx.globalAlpha=0.16;ctx.fillStyle='#f7f8f3';
+          ctx.fillRect(0,0,TEKS,TEKS);
           ctx.restore();
         }
 
